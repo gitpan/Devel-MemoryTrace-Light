@@ -1,7 +1,7 @@
 package Devel::MemoryTrace::Light;
 
 BEGIN {
-	$Devel::MemoryTrace::Light::VERSION = '0.01';
+	$Devel::MemoryTrace::Light::VERSION = '0.02';
 }
 
 use strict;
@@ -94,13 +94,15 @@ Devel::MemoryTrace::Light - Print a message when your program grows in memory
 
 =head1 VERSION
 
-version .01
+version .02
 
 =head1 SYNOPSIS
 
   perl -d:MemoryTrace::Light Program
 
 =head1 DESCRIPTION
+
+B<This is an Alpha release! More features to come.>
 
 Prints out a message when your program grows in memory containing the package, 
 file, line, and number of bytes (resident set size) your program increased. For 
@@ -117,7 +119,7 @@ example, if your program looked like this:
 Then the output will look like:
 
   >> init, 0 (0) used 8192 bytes
-  >> main, ex.pl (9) used 20480 bytes
+  >> main, ex.pl (7) used 20480 bytes
 
 =head1 RUN-TIME CONTROL OF TRACING
 
@@ -144,6 +146,18 @@ memory size. C<\&somefunc> should accept 4 arguments:
 =head2 restore_callback()
 
 Restores the default callback.
+
+=head1 OS SUPPORT
+
+Currently works on FreeBSD, Linux, and anywhere else L<GTop> is supported.
+
+On FreeBSD, installing this module will install L<BSD::Process> unless
+L<GTop> is already installed. L<BSD::Process> will be preferred if both
+modules are on the system.
+
+=head1 BUGS
+
+Please report any bugs (or feature requests) through L<http://rt.cpan.org/>.
 
 =head1 AUTHOR
 
