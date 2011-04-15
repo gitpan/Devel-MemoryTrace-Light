@@ -1,0 +1,12 @@
+Changes
+LICENSE
+MANIFEST
+META.yml
+Makefile.PL
+README
+TODO
+dist.ini
+lib/Devel/MemoryTrace/Light.pm
+lib/Devel/MemoryTrace/Light/BSDProcess.pm
+lib/Devel/MemoryTrace/Light/GTop.pm
+t/release-pod-syntax.t
