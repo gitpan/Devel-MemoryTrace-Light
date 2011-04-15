@@ -11,7 +11,9 @@ use ExtUtils::MakeMaker 6.31;
 my %WriteMakefileArgs = (
   'ABSTRACT' => 'A simple lightweight memory-growth tracer',
   'AUTHOR' => 'Matthew Horsfall <WolfSage@cpan.org>',
-  'BUILD_REQUIRES' => {},
+  'BUILD_REQUIRES' => {
+    'Test::More' => '0'
+  },
   'CONFIGURE_REQUIRES' => {
     'ExtUtils::MakeMaker' => '6.31'
   },
@@ -21,9 +23,9 @@ my %WriteMakefileArgs = (
   'NAME' => 'Devel::MemoryTrace::Light',
   'PREREQ_PM' => {
   },
-  'VERSION' => '0.01',
+  'VERSION' => '0.03',
   'test' => {
-    'TESTS' => ''
+    'TESTS' => 't/*.t'
   }
 );
 
