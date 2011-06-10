@@ -1,44 +1,88 @@
 package Devel::MemoryTrace::Light;
 
 BEGIN {
-	$Devel::MemoryTrace::Light::VERSION = '0.04';
+	$Devel::MemoryTrace::Light::VERSION = '0.05';
 }
 
 use strict;
 use warnings;
 
-my @mod_preference = qw(
-	Devel::MemoryTrace::Light::BSDProcess
-	Devel::MemoryTrace::Light::GTop
-);
-
-if ($^O ne 'freebsd') {
-	shift @mod_preference;
-}
-
+my $trace;                # Tracing enabled by default (set after ENV handling)
+my $trace_immediate  = 0; # Compile-time tracing disabled by default
 my $mem_class;
 
-for my $p (@mod_preference) {
-	eval "use $p";
+if (my $opts = $ENV{MEMORYTRACE_LIGHT}) {
+	for my $opt (split(':', $opts)) {
+		my ($key, $val) = split('=', $opt);
 
-	unless ($@) {
-		$mem_class = $p; last;
+		if ($key eq 'start') {
+			if ($val eq 'no') {
+				$trace = 0;
+			} elsif ($val eq 'begin') {
+				$trace_immediate = 1;
+			} else {
+				warn "Ignoring unknown value ($val) for 'start'\n";
+			}
+		} elsif ($key eq 'provider') {
+			eval "use $val";
+
+			die "Custom provider ($val) failed to load: $@\n" if $@;
+
+			die "Custom provider ($val) failed to load: No get_mem() method found\n"
+				unless $val->can('get_mem');
+
+			die "Custom provider ($val) failed to load: get_mem() didn't return an integer\n"
+				unless $val->get_mem() =~ /\A\d+\Z/;
+
+			$mem_class = $val;
+		} else {
+			warn "Ignoring unknown config option ($key)\n";
+		}
 	}
 }
 
-unless ($mem_class) {
-	die "No suitable memory examiner found!\n";
-}
+# Trace enabled by default. Set down here incase die() is called above
+$trace = 1 unless defined $trace;
 
+unless ($mem_class) {
+	my @mod_preference = qw(
+		Devel::MemoryTrace::Light::BSDProcess
+		Devel::MemoryTrace::Light::GTop
+	);
+
+	if ($^O ne 'freebsd') {
+		shift @mod_preference;
+	}
+
+	for my $p (@mod_preference) {
+		eval "use $p";
+
+		unless ($@) {
+			$mem_class = $p; last;
+		}
+	}
+
+	unless ($mem_class) {
+		die "No suitable memory examiner found!\n";
+	}
+}
 
 package DB;
 
 use strict;
 use warnings;
 
-my $trace = 1;
+# Disables tracing after compile-time if start=no was set
+INIT {
+	$DB::single = $trace;
+}
 
 my $callback = \&_report;
+
+my $last_mem = $mem_class->get_mem();
+my @last_id  = ('init', 0, 0);
+
+my $pid = $$;
 
 sub set_callback (&) {
 	$callback = $_[0];
@@ -48,21 +92,36 @@ sub restore_callback () {
 	$callback = \&_report;
 }
 
-sub _disable_trace {
-	$trace = 0;
+sub enable_trace () {
+	# Memory tracing has been disabled, update our state
+	if ($pid != $$) {
+		$mem_class->forked() if $mem_class->can('forked');
+
+		$pid = $$;
+	}
+
+	$last_mem = $mem_class->get_mem();
+	@last_id = caller();
+
+	$DB::single = 1;
+}
+
+sub disable_trace () {
+	$DB::single = 0;
 }
 
 sub _report {
 	my ($pkg, $file, $line, $mem) = @_;
 
-	printf(">> $pkg, $file ($line) used %d bytes\n", $mem);
+	printf(">> $$ $pkg, $file ($line) used %d bytes\n", $mem);
 }
 
-my $last_mem = $mem_class->get_mem();
-my @last_id  = ('init', 0, 0);
-
 sub DB {
-	return unless $trace;
+	if ($pid != $$) {
+		$mem_class->forked() if $mem_class->can('forked');
+
+		$pid = $$;
+	}
 
 	my $newmem = $mem_class->get_mem();
 
@@ -76,9 +135,18 @@ sub DB {
 }
 
 END {
-	DB::DB(); # Force last line to be evaluated for memory growth
+	if ($DB::single) {
+		# Force last line to be evaluated for memory growth
+		DB::DB();
 
-	_disable_trace();	
+		# Otherwise we'll probably crash
+		disable_trace();
+	}
+}
+
+# This must go at the end (so we don't trace our own compilation)
+if ($trace_immediate) {
+	$DB::single = 1;
 }
 
 1;
@@ -94,7 +162,7 @@ Devel::MemoryTrace::Light - Print a message when your program grows in memory
 
 =head1 VERSION
 
-version .04
+version .05
 
 =head1 SYNOPSIS
 
@@ -104,9 +172,9 @@ version .04
 
 B<This is an Alpha release! More features to come.>
 
-Prints out a message when your program grows in memory containing the package, 
-file, line, and number of bytes (resident set size) your program increased. For 
-example, if your program looked like this:
+Prints out a message when your program grows in memory containing the 
+B<pid>, B<package>, B<file>, B<line>, and B<number of bytes> (resident set 
+size) your program increased. For example, if your program looked like this:
 
   #!/usr/bin/perl
 
@@ -118,18 +186,65 @@ example, if your program looked like this:
 
 Then the output will look like:
 
-  >> init, 0 (0) used 8192 bytes
-  >> main, ex.pl (7) used 20480 bytes
+  >> 324 init, 0 (0) used 8192 bytes
+  >> 324 main, ex.pl (7) used 20480 bytes
+
+=head1 MEMORYTRACE_LIGHT ENVIRONMENT VARIABLE
+
+The C<MEMORYTRACE_LIGHT> environment variable may be used to control some of the 
+behaviors of Devel::MemoryTrace::Light. The format is C<key=value>, and multiple 
+values may be set at one time using the C<:> separator. For example:
+
+  export MEMORYTRACE_LIGHT=start=no:provider=MyClass
+
+=head2 provider=...
+
+Forces Devel::MemoryTrace::Light to use whatever class is passed in to determine 
+memory usage.
+
+The provider class I<must> define a C<get_mem()> method which should return 
+the current process' memory size. The built in modules return the resident set 
+size, but a custom provider could use virtual, swap, or whatever it wants, as 
+long as it returns the same type of information consistently.
+
+The provider class I<should> also define a C<forked()> method which will be 
+called if Devel::MemoryTrace::Light detects that the process has forked. This method 
+should do any re-initialization necessary for the provider class to accurately 
+report memory for the new forked process.
+
+The B<provider> setting may also be used to force Devel::MemoryTrace::Light to 
+prefer one of the built-in providers over another if more than one is installed.
+
+=head2 start=...
+
+Modify when tracing happens:
+
+  start=begin - trace compilation of the program and beyond
+  start=no    - disable tracing until C<DB::enable_trace()> is called
+
+By default, tracing doesn't happen until the beginning of the INIT phase, after 
+compilation. To see where memory growth is happening inside of C<use> 
+statements, use C<start=begin>.
 
 =head1 RUN-TIME CONTROL OF TRACING
+
+A limited set of functionality is provided for run-time control of tracing.
+
+=head2 DB::disable_trace()
+
+=head2 DB::enable_trace()
+
+You can control when tracing happens by using C<DB::enable_trace()> and 
+C<DB::disable_trace>. This works well coupled with the C<start=no> 
+setting in the C<MEMORYTRACE_LIGHT> environment variable described above.
+
+=head2 DB::set_callback(\&somefunc)
 
 If you would like to override the default behavior of printing to STDOUT 
 whenever the program size increases, you may provide your own callback method.
 
-=head2 set_callback(\&somefunc)
-
-Causes C<\&somefunc> to be called whenever the debugger detects an increase in 
-memory size. C<\&somefunc> should accept 4 arguments:
+This causes C<\&somefunc> to be called whenever the debugger detects an increase 
+in memory size. C<\&somefunc> should accept 4 arguments:
 
 =over 4
 
@@ -143,7 +258,7 @@ memory size. C<\&somefunc> should accept 4 arguments:
 
 =back
 
-=head2 restore_callback()
+=head2 DB::restore_callback()
 
 Restores the default callback.
 
@@ -154,6 +269,43 @@ Currently works on FreeBSD, Linux, and anywhere else L<GTop> is supported.
 On FreeBSD, installing this module will install L<BSD::Process> unless
 L<GTop> is already installed. L<BSD::Process> will be preferred if both
 modules are on the system.
+
+=head1 CAVEATS
+
+This module only identifies lines in a program that the resident set size 
+increased at. This does not mean, however, that if you have a memory leak and 
+you see bizarre lines increasing in size that they must be the problem. Often 
+times, that's not the case. Consider the following example:
+
+  #!/usr/bin/perl
+
+  use strict;
+  use warnings;
+
+  my @cache;
+
+  for (1..10_000) {
+          nothing();
+          use_mem();
+  }
+
+  sub nothing {
+          my @arr = 5;
+  }
+
+  sub use_mem {
+          push @cache, 1;
+  }
+
+If you run the above code under C<Devel::MemoryTrace::Light>, C<nothing()> will 
+be reported as using the most memory. In reality though, C<use_mem()> is caching 
+data and is the real cause of the memory consumption, but C<nothing()> causes 
+more actual memory growth as it tries to create a new array and assign 
+a value to its first element. 
+
+This is because after C<use_mem()> returns and C<@arr> goes out of scope, the 
+memory allocated to C<@arr> is potentially freed by the garbage collector, 
+allowing C<use_mem()> to use it without having to allocate more.
 
 =head1 BUGS
 
