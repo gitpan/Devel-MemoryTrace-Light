@@ -1,7 +1,7 @@
 package Devel::MemoryTrace::Light;
 
 BEGIN {
-	$Devel::MemoryTrace::Light::VERSION = '0.05';
+	$Devel::MemoryTrace::Light::VERSION = '0.06';
 }
 
 use strict;
@@ -162,7 +162,7 @@ Devel::MemoryTrace::Light - Print a message when your program grows in memory
 
 =head1 VERSION
 
-version .05
+version 0.06
 
 =head1 SYNOPSIS
 
@@ -170,7 +170,7 @@ version .05
 
 =head1 DESCRIPTION
 
-B<This is an Alpha release! More features to come.>
+B<This is a Beta release!>
 
 Prints out a message when your program grows in memory containing the 
 B<pid>, B<package>, B<file>, B<line>, and B<number of bytes> (resident set 
