@@ -1,8 +1,10 @@
 package Devel::MemoryTrace::Light;
 
 BEGIN {
-	$Devel::MemoryTrace::Light::VERSION = '0.08';
+	$Devel::MemoryTrace::Light::VERSION = '0.09';
 }
+
+use 5.005; # INIT
 
 use strict;
 use warnings;
@@ -88,11 +90,11 @@ sub set_callback (&) {
 	$callback = $_[0];
 }
 
-sub restore_callback () {
+sub restore_callback {
 	$callback = \&_report;
 }
 
-sub enable_trace () {
+sub enable_trace {
 	# Memory tracing has been disabled, update our state
 	if ($pid != $$) {
 		$mem_class->forked() if $mem_class->can('forked');
@@ -106,7 +108,7 @@ sub enable_trace () {
 	$DB::single = 1;
 }
 
-sub disable_trace () {
+sub disable_trace {
 	$DB::single = 0;
 }
 
@@ -163,15 +165,13 @@ Devel::MemoryTrace::Light - Print a message when your program grows in memory
 
 =head1 VERSION
 
-version 0.08
+version 0.09
 
 =head1 SYNOPSIS
 
   perl -d:MemoryTrace::Light Program
 
 =head1 DESCRIPTION
-
-B<This is a Beta release!>
 
 Prints out a message when your program grows in memory containing the 
 B<pid>, B<package>, B<file>, B<line>, and B<number of bytes> (resident set 
